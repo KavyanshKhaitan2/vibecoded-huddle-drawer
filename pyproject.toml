@@ -1,0 +1,41 @@
+[project]
+name = "huddle-drawings"
+version = "0.1.0"
+description = "Draw on Slack huddle screen shares from Python, with no browser and no Slack app"
+readme = "README.md"
+authors = [
+    { name = "KavyanshKhaitan2", email = "kavyanshkhaitan11@gmail.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "aiortc>=1.16.0",
+    "httpx>=0.28.1",
+    "numpy>=2.5.4",
+    "pillow>=13.0.0",
+    "protobuf>=7.36.2",
+    "python-dotenv>=1.2.4",
+    "websockets>=17.4",
+]
+
+[project.scripts]
+huddle-drawings = "huddle_drawings.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.7,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.uv.build-backend]
+# Keep the vendored .proto files in the wheel so `make proto` works from a
+# checkout and the schemas travel with the code.
+source-include = ["src/huddle_drawings/proto/*.proto"]

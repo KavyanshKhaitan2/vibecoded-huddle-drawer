@@ -83,6 +83,13 @@ def test_filled_square_costs_more_than_its_outline() -> None:
     assert len(filled) > len(outline)
 
 
+def test_rectangle_is_an_alias_for_square_and_fills() -> None:
+    assert shape_segments("rectangle", RECT) == shape_segments("square", RECT)
+    assert shape_segments("rect", RECT) == shape_segments("square", RECT)
+    filled = shape_segments("rectangle", RECT, filled=True, fill_row_height=0.05)
+    assert filled == shape_segments("square", RECT, filled=True, fill_row_height=0.05)
+
+
 # -- SVG ------------------------------------------------------------------
 
 
@@ -229,3 +236,42 @@ def test_text_coverage_is_what_the_font_actually_has() -> None:
 
 def test_longer_text_costs_more() -> None:
     assert len(text_in("AA", RECT)) > len(text_in("A", RECT))
+
+
+def _curve_extent(segs):
+    """Where the drawn curves actually reach, not their control points."""
+    def at(s, t):
+        u = 1 - t
+        w = (u**3, 3 * u * u * t, 3 * u * t * t, t**3)
+        return (sum(k * q.x for k, q in zip(w, s.points)),
+                sum(k * q.y for k, q in zip(w, s.points)))
+
+    pts = [at(s, t / 20) for s in segs for t in range(21)]
+    return (min(x for x, _ in pts), min(y for _, y in pts),
+            max(x for x, _ in pts), max(y for _, y in pts))
+
+
+@pytest.mark.parametrize(
+    "target",
+    [Rect(0.0, 0.0, 1.0, 1.0), Rect(0.1, 0.6, 0.9, 0.9), Rect(0.2, 0.1, 0.4, 0.8)],
+)
+def test_filled_rectangle_covers_exactly_its_rect(target: Rect) -> None:
+    # A hairpin's controls overshoot the edge so its tip lands on it; fitting by
+    # control points used to shrink a full-screen fill to the middle 3/4.
+    x0, y0, x1, y1 = _curve_extent(shape_segments("rectangle", target, filled=True))
+    assert x0 == pytest.approx(target.x0, abs=1e-3)
+    assert x1 == pytest.approx(target.x1, abs=1e-3)
+    assert y0 == pytest.approx(target.y0, abs=1e-3)
+    assert y1 == pytest.approx(target.y1, abs=0.01)  # last band may stop a pen short
+
+
+def test_rectangle_outline_is_not_squared_off() -> None:
+    target = Rect(0.1, 0.6, 0.9, 0.9)
+    assert _curve_extent(shape_segments("rectangle", target)) == pytest.approx(
+        (0.1, 0.6, 0.9, 0.9)
+    )
+
+
+def test_square_stays_square_and_centred() -> None:
+    x0, y0, x1, y1 = _curve_extent(shape_segments("square", Rect(0.0, 0.0, 1.0, 0.5)))
+    assert (x0, y0, x1, y1) == pytest.approx((0.25, 0.0, 0.75, 0.5))

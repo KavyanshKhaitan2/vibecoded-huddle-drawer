@@ -7,7 +7,16 @@ import json
 
 import pytest
 
-from huddle_drawings.config import Config, ConfigError, load_accounts
+from huddle_drawings.config import (
+    CHIME_DATA_MESSAGE_BURST,
+    CHIME_DATA_MESSAGE_RATE,
+    CLIENT_DATA_MESSAGE_BURST,
+    CLIENT_DATA_MESSAGE_RATE,
+    DATA_MESSAGE_HEADROOM,
+    Config,
+    ConfigError,
+    load_accounts,
+)
 from huddle_drawings.geometry import Point, Segment
 from huddle_drawings.multi import Layer, MultiSession
 from huddle_drawings.ratelimit import TokenBucket
@@ -260,6 +269,28 @@ async def test_join_all_shares_one_rate_limiter(
     assert len(seen) == 3
     assert all(bucket is seen[0] for bucket in seen), "all accounts share one bucket"
     assert seen[0] is m.limiter
+    # ...and that one bucket leaves the meeting some headroom rather than
+    # taking the whole budget: the rest of the huddle is also sending.
+    assert m.limiter.rate == CHIME_DATA_MESSAGE_RATE * DATA_MESSAGE_HEADROOM
+    assert m.limiter.capacity == CHIME_DATA_MESSAGE_BURST * DATA_MESSAGE_HEADROOM
+    assert DATA_MESSAGE_HEADROOM < 1.0
+
+
+async def test_the_headroom_is_one_knob() -> None:
+    """One constant, derived everywhere -- not copied per module.
+
+    This has already gone wrong once for the fill policy, which was duplicated
+    in the CLI and so never reached the TUI. Here the cost of forking it is
+    worse than a wrong default: ``video.segments_per_frame`` hands a frame a
+    budget the ``TokenBucket`` then has to pass, and if the two disagree the
+    surplus is dropped *silently* out of the middle of frames.
+    """
+    from huddle_drawings import video
+
+    assert TokenBucket().rate == CLIENT_DATA_MESSAGE_RATE
+    assert TokenBucket().capacity == CLIENT_DATA_MESSAGE_BURST
+    assert video.DEFAULT_HEADROOM == DATA_MESSAGE_HEADROOM
+    assert video.segments_per_frame(1) == int(CLIENT_DATA_MESSAGE_RATE)
 
 
 async def test_join_all_skips_a_failing_account_by_default(

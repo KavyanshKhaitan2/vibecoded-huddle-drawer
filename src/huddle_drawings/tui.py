@@ -36,7 +36,7 @@ from typing import Protocol
 from . import shapes
 from . import image_trace as image_trace_module
 from .image_trace import DEFAULT_MAX_SEGMENTS
-from .config import CHIME_DATA_MESSAGE_RATE, LINE_CLEAR_WAIT, Config
+from .config import CLIENT_DATA_MESSAGE_RATE, LINE_CLEAR_WAIT, Config
 from .geometry import Rect, Segment
 from .multi import Layer, MultiSession
 from .peer_messages import build_reacji, describe_peer_message, parse_peer_message
@@ -342,7 +342,7 @@ class Tui:
             )
         self.write(
             f"  {total} segments across {len(layers)} colour(s) "
-            f"(~{total / CHIME_DATA_MESSAGE_RATE:.1f}s of the meeting's shared "
+            f"(~{total / CLIENT_DATA_MESSAGE_RATE:.1f}s of the meeting's shared "
             "budget)"
         )
         if not await self.wait_for_clear():

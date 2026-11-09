@@ -25,6 +25,7 @@ import contextlib
 import logging
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 from . import geometry, shapes
 from .autojoin import AutoJoiner
@@ -33,7 +34,7 @@ from . import image_trace
 from .image_trace import DEFAULT_MAX_SEGMENTS
 from .config import (
     LINE_CLEAR_WAIT,
-    CHIME_DATA_MESSAGE_RATE,
+    CLIENT_DATA_MESSAGE_RATE,
     Config,
     ConfigError,
     load_accounts,
@@ -45,6 +46,11 @@ from .slack import SlackClient
 from .types import DataMessage, HuddleError, SlackApiError
 
 log = logging.getLogger("huddle_drawings")
+
+#: Extensions ffmpeg will "successfully" decode as ANSI-art video.
+_NOT_VIDEO_SUFFIXES = frozenset(
+    {".txt", ".md", ".log", ".json", ".csv", ".py", ".ans", ".nfo", ""}
+)
 
 #: Named shapes, defined in shapes.py.
 SHAPES = shapes.SHAPES
@@ -180,7 +186,7 @@ def _maybe_preview(args: argparse.Namespace, layers: Sequence[Layer]) -> bool:
     total = sum(len(layer.segments) for layer in layers)
     print(
         f"wrote {args.preview}: {len(layers)} colour layer(s), {total} segments "
-        f"(~{total / CHIME_DATA_MESSAGE_RATE:.1f}s of the meeting's budget). "
+        f"(~{total / CLIENT_DATA_MESSAGE_RATE:.1f}s of the meeting's budget). "
         "Nothing was sent and no huddle was joined."
     )
     return True
@@ -255,6 +261,21 @@ async def _segments_for(
         return shapes.svg_path_segments(args.svg_path, rect)
     if getattr(args, "text", None):
         return shapes.text_in(args.text, rect)
+
+    # Named shapes are outlines by default: fill only when explicitly asked
+    # (`args.fill` is True, not just None -- _wants_fill defaults to True for
+    # --emoji/--image, which must not flip every shape to filled). Only
+    # rect-like shapes can be filled today, so asking to fill anything else is
+    # an error rather than a silently hollow drawing.
+    if args.fill:
+        if args.shape not in ("square", "box", "rectangle", "rect"):
+            raise HuddleError(
+                f"--fill only applies to a rectangle (--shape rectangle), "
+                f"not {args.shape!r}; a {args.shape} is its outline"
+            )
+        return shapes.shape_segments(
+            args.shape, rect, filled=True, fill_row_height=args.fill_row_height
+        )
     return shapes.shape_segments(args.shape, rect, simplify=args.simplify)
 
 
@@ -345,7 +366,7 @@ async def cmd_draw_colors(config: Config, args: argparse.Namespace) -> int:
         )
     print(
         f"prepared {len(layers)} colour layer(s), {total} segments total "
-        f"(~{total / CHIME_DATA_MESSAGE_RATE:.1f}s of the meeting's shared "
+        f"(~{total / CLIENT_DATA_MESSAGE_RATE:.1f}s of the meeting's shared "
         f"message budget)"
     )
 
@@ -383,7 +404,7 @@ async def cmd_draw(config: Config, args: argparse.Namespace) -> int:
         return 0
     print(
         f"prepared {len(segments)} segments "
-        f"(~{len(segments) / CHIME_DATA_MESSAGE_RATE:.1f}s of the meeting's "
+        f"(~{len(segments) / CLIENT_DATA_MESSAGE_RATE:.1f}s of the meeting's "
         f"message budget)"
     )
 
@@ -487,6 +508,16 @@ async def cmd_video(config: Config, args: argparse.Namespace) -> int:
         )
         return 2
 
+    suffix = Path(args.video).suffix.lower()
+    if suffix in _NOT_VIDEO_SUFFIXES:
+        print(
+            f"{args.video} does not look like a video. ffmpeg will happily "
+            "demux a text file as an ANSI-art 'video' and play rendered text, "
+            "which is never what anyone means — pass an actual video file.",
+            file=sys.stderr,
+        )
+        return 2
+
     rect = _target_rect(args)
     print(f"decoding {args.video} at {args.fps:g} fps…")
     images = list(
@@ -560,11 +591,7 @@ async def cmd_video(config: Config, args: argparse.Namespace) -> int:
                 stop=stop,
                 on_frame=report if args.verbose else None,
             )
-            print(
-                f"played {stats.frames_drawn} frame(s), skipped "
-                f"{stats.frames_skipped}, {stats.segments_sent} segments in "
-                f"{stats.elapsed:.1f}s"
-            )
+            print(stats.describe())
             if stats.frames_skipped:
                 print(
                     "skipped frames mean the attendee pool ran dry — a line "
@@ -623,9 +650,11 @@ def _add_drawing_source_args(p: argparse.ArgumentParser) -> None:
         type=int,
         default=DEFAULT_MAX_SEGMENTS,
         help="hard cap on segments when tracing. One segment is one Chime "
-        "message and the whole meeting shares ~150/s, so the default "
+        # argparse %-formats help text, so a literal percent has to be doubled.
+        "message and the whole meeting shares ~150/s, of which this takes 90%% "
+        "and leaves the rest for everyone else, so the default "
         f"{DEFAULT_MAX_SEGMENTS} is roughly "
-        f"{DEFAULT_MAX_SEGMENTS / CHIME_DATA_MESSAGE_RATE:.0f}s of solid "
+        f"{DEFAULT_MAX_SEGMENTS / CLIENT_DATA_MESSAGE_RATE:.0f}s of solid "
         "sending. Lower it if others are drawing too, or to finish sooner "
         f"(default: {DEFAULT_MAX_SEGMENTS})",
     )
@@ -666,8 +695,9 @@ def _add_drawing_source_args(p: argparse.ArgumentParser) -> None:
         default=None,
         help="fill solid regions instead of just outlining them, using the "
         "doc's hairpin trick. Usually *cheaper* than an outline as well as "
-        "looking right. Default: on for --emoji, off for --image (filling "
-        "loses line art)",
+        "looking right. For a filled rectangle: --shape rectangle --fill. "
+        "Default: on for --emoji, off for --image (filling loses line art); "
+        "a --shape is outlined unless --fill is given",
     )
     fill.add_argument(
         "--no-fill", dest="fill", action="store_false", help="force outlines",
@@ -807,8 +837,8 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="frames per second. Higher is smoother but needs more attendees "
-        "and allows fewer segments per frame: 1 fps is ~9 attendees and ~120 "
-        "segments/frame, 2 fps is ~18 and ~60 (default: 1)",
+        "and allows fewer segments per frame: 1 fps is ~9 attendees and ~135 "
+        "segments/frame, 2 fps is ~18 and ~67 (default: 1)",
     )
     p.add_argument("--colors", "--colours", dest="colors", type=int, default=1,
                    metavar="N", help="colour layers per frame; multiplies the "

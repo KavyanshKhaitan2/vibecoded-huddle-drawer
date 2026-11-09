@@ -24,6 +24,7 @@ from .geometry import (
     circle_segments,
     fit_points_into_rect,
     fit_segments_into_rect,
+    pen_size_normalized,
     polyline_segments,
     rect_segments,
     smooth_path,
@@ -31,6 +32,10 @@ from .geometry import (
 )
 
 _UNIT = Rect(0.0, 0.0, 1.0, 1.0)
+
+#: Band height for a filled shape, in normalized share units: one 7 px pen on
+#: a 1080p share, so the two rows of each hairpin just touch.
+DEFAULT_FILL_ROW_HEIGHT = pen_size_normalized(1920, 1080)[1]
 
 
 def _to_unit(points: list[Point]) -> list[Point]:
@@ -46,7 +51,10 @@ def _to_unit(points: list[Point]) -> list[Point]:
     return fit_points_into_rect(points, _UNIT, preserve_aspect=True)
 
 #: Named shapes available to ``--shape``.
-SHAPES = ("heart", "star", "circle", "square", "box", "spiral", "arrow", "cross")
+SHAPES = (
+    "heart", "star", "circle", "square", "box", "rectangle", "rect",
+    "spiral", "arrow", "cross",
+)
 
 
 def _heart(samples: int = 64) -> list[Point]:
@@ -136,9 +144,22 @@ def shape_segments(
 
     if name == "circle":
         segs = circle_segments(Point(0.5, 0.5), 0.5)
-    elif name in ("square", "box"):
-        segs = rect_segments(
-            _UNIT, fill_row_height=fill_row_height if filled else None
+    elif name in ("square", "box", "rectangle", "rect"):
+        # Built directly in the target rect rather than fitted into it. Fitting
+        # goes by the control points' bounding box, and a hairpin's controls
+        # overshoot the edge by a third (so its tip lands *on* the edge), which
+        # would shrink the whole fill to 3/4 size. A rectangle also fills the
+        # rect exactly; only a square keeps its aspect and is centred.
+        target = rect.normalized()
+        if name in ("square", "box"):
+            side = min(target.width, target.height)
+            cx = (target.x0 + target.x1) / 2
+            cy = (target.y0 + target.y1) / 2
+            target = Rect(cx - side / 2, cy - side / 2, cx + side / 2, cy + side / 2)
+        if filled and fill_row_height is None:
+            fill_row_height = DEFAULT_FILL_ROW_HEIGHT
+        return rect_segments(
+            target, fill_row_height=fill_row_height if filled else None
         )
     elif name == "heart":
         segs = smooth_path(_to_unit(_heart()), epsilon=simplify, closed=True)

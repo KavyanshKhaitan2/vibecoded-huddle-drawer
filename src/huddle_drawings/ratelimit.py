@@ -14,20 +14,22 @@ import asyncio
 import time
 from dataclasses import dataclass, field
 
-from .config import CHIME_DATA_MESSAGE_BURST, CHIME_DATA_MESSAGE_RATE
+from .config import CLIENT_DATA_MESSAGE_BURST, CLIENT_DATA_MESSAGE_RATE
 
 
 @dataclass
 class TokenBucket:
     """Asyncio token bucket.
 
-    ``rate`` tokens are added per second up to ``capacity``. Defaults are
-    deliberately a little under Chime's measured limits so keep-alives and
-    bursts have headroom, per the doc's advice to "leave headroom".
+    ``rate`` tokens are added per second up to ``capacity``. The defaults are
+    :data:`~huddle_drawings.config.DATA_MESSAGE_HEADROOM` of Chime's measured
+    limits -- 90%, so 135/s and a burst of 180 -- leaving the rest of the
+    meeting's shared budget for everything else in the huddle, per the doc's
+    advice to "leave headroom".
     """
 
-    rate: float = CHIME_DATA_MESSAGE_RATE * 0.8
-    capacity: float = CHIME_DATA_MESSAGE_BURST * 0.75
+    rate: float = CLIENT_DATA_MESSAGE_RATE
+    capacity: float = CLIENT_DATA_MESSAGE_BURST
     _tokens: float = field(init=False, default=0.0)
     _updated: float = field(init=False, default=0.0)
     _lock: asyncio.Lock = field(init=False, default_factory=asyncio.Lock)

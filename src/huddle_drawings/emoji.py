@@ -826,8 +826,8 @@ async def resolve_emoji_image(
     raise HuddleError(
         f"could not turn :{name}: into an image. Tried: "
         + "; ".join(attempts)
-        + f". Pass the literal emoji character instead of the name (e.g. "
-        f"'\N{PARTY POPPER}' rather than ':tada:') -- that path needs no name "
+        + ". Pass the literal emoji character instead of the name (e.g. "
+        "'\N{PARTY POPPER}' rather than ':tada:') -- that path needs no name "
         "table at all"
     )
 

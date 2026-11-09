@@ -14,6 +14,19 @@ from dotenv import load_dotenv
 CHIME_DATA_MESSAGE_RATE = 150.0
 CHIME_DATA_MESSAGE_BURST = 200.0
 
+#: The share of that meeting-wide budget this client will take, leaving the
+#: rest for everything else going on in the huddle: other people's drawings and
+#: reactions, cursor ``POSITION`` updates, awareness-sync and transcript
+#: traffic. The limit is per *meeting*, not per sender, and the excess is
+#: dropped **silently** -- so spending all 150/s does not fail loudly, it just
+#: starts eating other participants' messages (and theirs ours). 0.9 is the
+#: single knob for that headroom; everything that paces itself derives from it.
+DATA_MESSAGE_HEADROOM = 0.9
+
+#: What this client actually sends at: 135 payloads/s sustained, 180 burst.
+CLIENT_DATA_MESSAGE_RATE = CHIME_DATA_MESSAGE_RATE * DATA_MESSAGE_HEADROOM
+CLIENT_DATA_MESSAGE_BURST = CHIME_DATA_MESSAGE_BURST * DATA_MESSAGE_HEADROOM
+
 #: Chime drops payloads over this size.
 MAX_DATA_MESSAGE_BYTES = 2048
 

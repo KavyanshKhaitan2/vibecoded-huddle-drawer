@@ -60,7 +60,7 @@ import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Literal, TypeAlias
+from typing import Any, Literal, TypeAlias
 
 import numpy as np
 from PIL import Image, ImageFilter, ImageOps
@@ -281,13 +281,16 @@ class TraceResult:
     def __bool__(self) -> bool:
         return bool(self.segments)
 
-    def estimated_seconds(self, rate: float = config.CHIME_DATA_MESSAGE_RATE) -> float:
-        """Wall-clock time to send these at the meeting's message budget.
+    def estimated_seconds(
+        self, rate: float = config.CLIENT_DATA_MESSAGE_RATE
+    ) -> float:
+        """Wall-clock time to send these at the rate this client sends at.
 
-        ``len(segments) / rate``, with ``rate`` defaulting to Chime's measured
-        ~150 data messages/s *per meeting*
-        (:data:`config.CHIME_DATA_MESSAGE_RATE`). This is the number users
-        actually care about: 2000 segments is ~13 s of solid messages.
+        ``len(segments) / rate``, with ``rate`` defaulting to
+        :data:`config.CLIENT_DATA_MESSAGE_RATE` -- 90% of Chime's measured ~150
+        data messages/s *per meeting*, the tenth being left for everything else
+        in the huddle. This is the number users actually care about: 2000
+        segments is ~15 s of solid messages.
 
         Be honest about what it ignores:
 
@@ -312,7 +315,7 @@ class TraceResult:
             f"{self.contours} contours",
             f"mode={self.mode}",
             f"{self.estimated_seconds():.1f}s at "
-            f"{config.CHIME_DATA_MESSAGE_RATE:.0f}/s",
+            f"{config.CLIENT_DATA_MESSAGE_RATE:.0f}/s",
         ]
         if self.contours_filtered:
             parts.append(f"{self.contours_filtered} filtered as noise")
@@ -1970,12 +1973,12 @@ class ColorLayer:
         return f"hsla({self.hue}, 100%, 75%, {opacity:g})"
 
     def estimated_seconds(
-        self, rate: float = config.CHIME_DATA_MESSAGE_RATE
+        self, rate: float = config.CLIENT_DATA_MESSAGE_RATE
     ) -> float:
         """Wall-clock time to send this layer, as :meth:`TraceResult.estimated_seconds`.
 
-        Same caveats, and one more that matters here: the ~150 messages/s is
-        **per meeting**, not per sender, so N layers drawing at once share it.
+        Same caveats, and one more that matters here: the budget is **per
+        meeting**, not per sender, so N layers drawing at once share it.
         Use :func:`total_estimated_seconds` for the number that predicts how
         long a multi-attendee drawing really takes.
         """
@@ -2015,14 +2018,15 @@ class ColorLayer:
 
 
 def total_estimated_seconds(
-    layers: Sequence[ColorLayer], rate: float = config.CHIME_DATA_MESSAGE_RATE
+    layers: Sequence[ColorLayer], rate: float = config.CLIENT_DATA_MESSAGE_RATE
 ) -> float:
     """Wall-clock time to send **all** the layers, consistent with per-layer.
 
     The sum, not the max: Chime's ~150 data messages/s is a per-*meeting* token
     bucket shared by every sender, so drawing six layers from six attendees at
     once does not go six times faster -- it just means the bucket drains six
-    times as fast and the excess is dropped silently.
+    times as fast and the excess is dropped silently. ``rate`` defaults to the
+    90% share this client takes of that bucket.
     """
     if rate <= 0:
         raise ValueError("rate must be positive")
@@ -2036,7 +2040,7 @@ def describe_layers(layers: Sequence[ColorLayer]) -> str:
         f"{len(layers)} layer(s) = {len(layers)} attendee(s), "
         f"{sum(len(x) for x in layers)} segments, "
         f"~{total_estimated_seconds(layers):.1f}s at "
-        f"{config.CHIME_DATA_MESSAGE_RATE:.0f}/s"
+        f"{config.CLIENT_DATA_MESSAGE_RATE:.0f}/s"
     )
     return "\n".join(lines)
 

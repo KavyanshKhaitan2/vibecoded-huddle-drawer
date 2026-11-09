@@ -25,7 +25,10 @@ Two protocol facts shape everything here:
   about 150 messages/second across every attendee together, bursting to ~200,
   and silently drops the rest. So the accounts must share a single
   :class:`~huddle_drawings.ratelimit.TokenBucket`; giving each its own would
-  overrun the meeting by a factor of N and lose strokes with no error.
+  overrun the meeting by a factor of N and lose strokes with no error. That
+  bucket is sized at :data:`~huddle_drawings.config.DATA_MESSAGE_HEADROOM`
+  (90%) of the limit, so the remaining tenth is left for the rest of the
+  meeting -- other people's drawings, cursors and reactions.
 * **Lines fade, and cannot be erased.** A line starts fading 5 s after that
   attendee's last non-``POSITION`` message (0.7 s after an ``END``), then
   fades for 3 s. For all the colours to be on screen *together*, every layer
@@ -39,9 +42,13 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
-from .config import CHIME_DATA_MESSAGE_BURST, CHIME_DATA_MESSAGE_RATE, Config
+from .config import (
+    CLIENT_DATA_MESSAGE_BURST,
+    CLIENT_DATA_MESSAGE_RATE,
+    Config,
+)
 from .draw import DrawClient
 from .geometry import Segment
 from .ratelimit import TokenBucket
@@ -81,8 +88,8 @@ class MultiSession:
         channel_id: str,
         count: int | None = None,
         muted: bool = True,
-        rate: float = CHIME_DATA_MESSAGE_RATE * 0.8,
-        capacity: float = CHIME_DATA_MESSAGE_BURST * 0.75,
+        rate: float = CLIENT_DATA_MESSAGE_RATE,
+        capacity: float = CLIENT_DATA_MESSAGE_BURST,
         require_all: bool = False,
         multidevice: bool | None = None,
     ) -> MultiSession:
@@ -276,11 +283,12 @@ class MultiSession:
 
         total = sum(len(layer) for layer in layers)
         log.info(
-            "drawing %d layer(s), %d segments total (~%.1fs at the meeting's "
-            "shared budget)",
+            "drawing %d layer(s), %d segments total (~%.1fs at our %.0f/s share "
+            "of the meeting's budget)",
             len(layers),
             total,
-            total / CHIME_DATA_MESSAGE_RATE,
+            total / self.limiter.rate,
+            self.limiter.rate,
         )
 
         drawers = [

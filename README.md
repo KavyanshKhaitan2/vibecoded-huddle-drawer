@@ -59,9 +59,19 @@ uv run huddle-drawings join    C0123456789 --seconds 60
 uv run huddle-drawings shares  C0123456789 --wait 60   # who's sharing a screen
 uv run huddle-drawings watch   C0123456789            # log peers' draw/reacji traffic
 uv run huddle-drawings draw    C0123456789 --shape heart --hue 320 --hold 20
+uv run huddle-drawings draw    C0123456789 --shape rectangle --fill \
+    --x .3 --y .3 --width .4 --height .4 --hue 210   # a filled rectangle
 uv run huddle-drawings draw    C0123456789 --text "HELLO" --y 0.1
 uv run huddle-drawings draw    C0123456789 --image sticker.png --max-segments 400
 uv run huddle-drawings draw    C0123456789 --svg-path "M .1 .1 C .9 .1 .9 .9 .1 .9"
+```
+
+Add `--preview out.png` to any `draw` command to render it locally and exit
+without joining a huddle — the cheapest way to check a drawing before spending
+the meeting's message budget on it:
+
+```sh
+uv run huddle-drawings draw C0123456789 --shape rectangle --fill --preview rect.png
 ```
 
 ## Drawing an image

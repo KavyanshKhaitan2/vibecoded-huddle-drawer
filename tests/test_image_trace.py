@@ -21,6 +21,7 @@ from PIL import Image, ImageDraw
 
 from huddle_drawings import geometry as g
 from huddle_drawings import image_trace as it
+from huddle_drawings.config import CLIENT_DATA_MESSAGE_RATE as RATE
 
 MODES = ("outline", "threshold", "fill", "auto")
 BUDGETS = (4, 7, 13, 40, 120, 600)
@@ -632,10 +633,12 @@ def test_estimated_seconds_scales_with_segment_count() -> None:
         )
 
     assert result(0).estimated_seconds() == 0.0
-    assert result(150).estimated_seconds() == pytest.approx(1.0)
-    assert result(300).estimated_seconds() == pytest.approx(2.0)
-    assert result(2000).estimated_seconds() == pytest.approx(13.33, rel=1e-3)
-    # The default rate is the measured per-meeting budget, shared by everyone.
+    assert result(int(RATE)).estimated_seconds() == pytest.approx(1.0, rel=1e-2)
+    assert result(2 * int(RATE)).estimated_seconds() == pytest.approx(2.0, rel=1e-2)
+    assert result(2000).estimated_seconds() == pytest.approx(2000 / RATE, rel=1e-3)
+    # The default rate is our share of the per-meeting budget -- which the rest
+    # of the meeting is also drawing from, so this is a floor either way.
+    assert RATE == pytest.approx(135.0)
     assert result(75).estimated_seconds(rate=75.0) == pytest.approx(1.0)
     with pytest.raises(ValueError):
         result(10).estimated_seconds(rate=0.0)
@@ -643,7 +646,7 @@ def test_estimated_seconds_scales_with_segment_count() -> None:
 
 def test_estimated_seconds_tracks_the_real_trace(circle: Path) -> None:
     result = it.trace_image(circle, mode="threshold")
-    assert result.estimated_seconds() == pytest.approx(len(result) / 150.0)
+    assert result.estimated_seconds() == pytest.approx(len(result) / RATE)
 
 
 def test_result_describe_mentions_cost_and_losses(ring_and_specks: Path) -> None:
@@ -653,7 +656,7 @@ def test_result_describe_mentions_cost_and_losses(ring_and_specks: Path) -> None
     ).describe()
     assert "segments" in text
     assert "dropped for budget" in text
-    assert "s at 150/s" in text
+    assert f"s at {RATE:.0f}/s" in text
 
 
 def test_result_len_and_bool(square: Path) -> None:
@@ -974,7 +977,7 @@ def test_flag_layers_are_cheap_and_report_their_own_cost(flag: Path) -> None:
         assert layer.trace.contours == 1
         assert len(layer) == len(layer.trace.segments)
     total = sum(len(x) for x in layers)
-    assert it.total_estimated_seconds(layers) == pytest.approx(total / 150.0)
+    assert it.total_estimated_seconds(layers) == pytest.approx(total / RATE)
 
 
 def test_flag_layers_share_one_transform_so_the_colours_register(
@@ -1348,7 +1351,7 @@ def test_one_layer_behaves_like_the_single_layer_trace(square: Path) -> None:
     box, reference = layer_bbox(layer), bbox(single)
     assert box.width == pytest.approx(reference.width, rel=0.1)
     assert box.height == pytest.approx(reference.height, rel=0.1)
-    assert layer.estimated_seconds() == pytest.approx(len(layer) / 150.0)
+    assert layer.estimated_seconds() == pytest.approx(len(layer) / RATE)
 
 
 def test_trace_image_is_unchanged_by_a_colour_trace(square: Path) -> None:
@@ -1473,8 +1476,8 @@ def _layer(n: int, hue: int = 200) -> it.ColorLayer:
 
 def test_layer_estimated_seconds_matches_trace_result() -> None:
     assert _layer(0).estimated_seconds() == 0.0
-    assert _layer(150).estimated_seconds() == pytest.approx(1.0)
-    assert _layer(2000).estimated_seconds() == pytest.approx(13.33, rel=1e-3)
+    assert _layer(int(RATE)).estimated_seconds() == pytest.approx(1.0, rel=1e-2)
+    assert _layer(2000).estimated_seconds() == pytest.approx(2000 / RATE, rel=1e-3)
     assert _layer(75).estimated_seconds(rate=75.0) == pytest.approx(1.0)
     with pytest.raises(ValueError):
         _layer(10).estimated_seconds(rate=0.0)
@@ -1483,7 +1486,7 @@ def test_layer_estimated_seconds_matches_trace_result() -> None:
 def test_total_estimated_seconds_adds_up_because_the_bucket_is_shared() -> None:
     """Six accounts drawing at once drain one ~150/s bucket six times as fast."""
     layers = [_layer(50), _layer(50), _layer(50)]
-    assert it.total_estimated_seconds(layers) == pytest.approx(1.0)
+    assert it.total_estimated_seconds(layers) == pytest.approx(150 / RATE)
     assert it.total_estimated_seconds(layers) == pytest.approx(
         sum(x.estimated_seconds() for x in layers)
     )
@@ -1508,7 +1511,7 @@ def test_describe_layers_reports_accounts_and_cost(flag: Path) -> None:
     text = it.describe_layers(layers)
     assert "3 layer(s)" in text, text
     assert f"{sum(len(x) for x in layers)} segments" in text
-    assert "s at 150/s" in text
+    assert f"s at {RATE:.0f}/s" in text
     assert text.count("hue=") == 3
     assert "% of ink" in text
 
@@ -1548,7 +1551,7 @@ def test_edges_is_an_alias_in_colour_mode_too(flag: Path) -> None:
     ]
 
 
-def test_accepts_an_open_pil_image(flag: Path) -> None:
+def test_colour_trace_accepts_an_open_pil_image(flag: Path) -> None:
     with Image.open(flag) as img:
         layers = it.trace_image_colors(img, layers=3)
     assert len(layers) == 3
